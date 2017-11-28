@@ -69,6 +69,7 @@ class MySimulation:
         self._random_seed = 23
         self._ofile = None
         self._otree = None
+        self._gtree = None
         self._treebuffer = None
         self._materials = {}
         self._geom = None
@@ -166,9 +167,11 @@ class MySimulation:
     def _prepare_output(self):
         '''Prepare ROOT tree for output data'''
         ofile = TFile(self._ofilename,'RECREATE')
-        otree = TTree('argon','Argon Simulation')
-        tb = TreeBuffer()
 
+        otree = TTree('argon','Argon Simulation')
+        gtree = TTree('gtree','Genie Information')
+        gtree.SetDirectory(0)
+        tb = TreeBuffer()
         tb.maxInit = 100
         tb.maxTracks = 100000
         tb.maxNQ = 10000000
@@ -221,7 +224,7 @@ class MySimulation:
         tb.zq = array('d',[0]*tb.maxNQ)
         # Hook for ancestor particle
         tb.ancestor = None
-        
+       
         otree.Branch('ev',tb.ev,'ev/I')
         otree.Branch('pida',tb.pida,'pida/I')
         otree.Branch('xa',tb.xa,'xa/D')
@@ -264,10 +267,12 @@ class MySimulation:
         otree.Branch('xq',tb.xq,'xq[nq]/D')
         otree.Branch('yq',tb.yq,'yq[nq]/D')
         otree.Branch('zq',tb.zq,'zq[nq]/D')
-        
+
         self._ofile = ofile
         self._otree = otree
+        self._gtree = gtree
         self._treebuffer = tb
+
         return
     
     def _close_output(self):
@@ -313,21 +318,11 @@ class MySimulation:
 
     def _init_generator(self):
         '''Initialize particle generator'''
-        if self._source.endswith('hepevt'):
-            self._generator = MyHepEvtGeneratorAction(
-                hepEvtFilename=self._source,
-                treebuffer=self._treebuffer)
-        elif self._source.endswith('.root'):
-            self._generator = MyGenieEvtGeneratorAction(
-                genieEvtFilename=self._source,
-                treebuffer=self._treebuffer)
-        else:
-            self._source_pos = G4ThreeVector(0,0,0)
-            self._generator = MyParticleGeneratorAction(
-                particleName=self._source,
-                energies=self._energies,
-                position=self._source_pos,
-                treebuffer=self._treebuffer)
+        self._generator = MyGenieEvtGeneratorAction(
+            genieEvtFilename=self._source,
+            treebuffer=self._treebuffer,
+            gtree=self._gtree,
+            ofile=self._ofile)
         gRunManager.SetUserAction(self._generator)
         return
 
@@ -356,6 +351,11 @@ class MySimulation:
 
 # Tree Buffer
 class TreeBuffer:
+    '''Dummy class for collecting tree data buffers'''
+    pass
+
+# Tree Buffer
+class GTreeBuffer:
     '''Dummy class for collecting tree data buffers'''
     pass
 
@@ -398,229 +398,43 @@ class MyDetectorConstruction(G4VUserDetectorConstruction):
 
 
 ###################################################################
-
-# Particle interaction generator
-class MyParticleGeneratorAction(G4VUserPrimaryGeneratorAction):
-    "Generator for single type of particles (e.g. e-, gammas, etc)"
-
-    def __init__(self, treebuffer, particleName='e-', energies=[1.0*GeV,],
-                 position=G4ThreeVector(0,0,0)):
-        G4VUserPrimaryGeneratorAction.__init__(self)
-        self.isInitialized = False
-        self.particleName = particleName
-        self.energies = energies
-        self.position = position
-        self.particleDef = None
-        self._tb = treebuffer
-        pass
-
-    def initialize(self):
-        # Prepare generator
-        particleTable = G4ParticleTable.GetParticleTable()
-        self.particleDef = particleTable.FindParticle(self.particleName)
-        self.isInitialized = True
-        return
-    
-    def GeneratePrimaries(self, event):
-        #self.particleGun.GeneratePrimaryVertex(event)
-        if not self.isInitialized:
-            self.initialize()
-        # No ancestor for this generator
-        self._tb.ancestor = None
-        # Create primaries
-        position = self.GenerateVertexPosition()
-        time = 0.
-        vertex = G4PrimaryVertex(position, time)
-        mass = self.particleDef.GetPDGMass()
-        # Record initial particle
-        tb = self._tb
-        tb.pidi[0] = self.particleDef.GetPDGEncoding()
-        tb.xi[0] = position.x / cm
-        tb.yi[0] = position.y / cm
-        tb.zi[0] = position.z / cm
-        tb.ti[0] = time / ns
-        tb.pxi[0] = 0
-        tb.pyi[0] = 0
-        tb.pzi[0] = 0
-        tb.ekini[0] = 0
-        tb.mi[0] = mass / GeV
-        for enr in self.energies:
-            particle = G4PrimaryParticle(self.particleDef.GetPDGEncoding())
-            # Particle emission is in +z direction
-            particle.Set4Momentum(0,0,sqrt(enr**2-mass**2),enr)
-            # Add to total initial momentum and kinetic energy
-            tb.pzi[0] += sqrt((self.energies[0])**2-mass**2) / GeV
-            tb.ekini[0] += (enr - mass) / GeV
-            # Ensure mass is exact
-            particle.SetMass(mass)
-            # Set direction
-            particleDirection = self.GenerateParticleDirection()
-            particle.SetMomentumDirection(particleDirection)
-            vertex.SetPrimary(particle)
-        event.AddPrimaryVertex(vertex)
-
-    def GenerateVertexPosition(self):
-        '''Generate a vertex position'''
-        return G4ThreeVector(self.position)
-
-    def GenerateParticleDirection(self):
-        '''Generate a particle direction'''
-        return G4ThreeVector(0,0,1)
-
-# Particle interaction generator
-class MyHepEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
-    "Generator based on HepEVT input data"
-    # Note: This generator is a quick hack.  Should eventually be
-    # rewritten in a better fashion.
-    
-    def __init__(self, hepEvtFilename, treebuffer):
-        G4VUserPrimaryGeneratorAction.__init__(self)
-        self.isInitialized = False
-        self.inputFile = hepEvtFilename
-        self.hepEvts = None
-        self.currentEventIdx = 0
-        self._tb = treebuffer
-        pass
-
-    def initialize(self):
-        # Prepare generator
-        datalines = open(self.inputFile).readlines()
-        self.hepEvts = self.parseHepEvts(datalines) 
-        print 'HepEVT Generator: Loaded %d events from %s' % (
-            len(self.hepEvts), self.inputFile)
-        self.isInitialized = True
-        return
-
-    def parseHepEvts(self,data):
-        '''Parse HepMC HEPEVT input data'''
-        hepEvts = []
-        in_block = False
-        idx = 0
-        while idx < len(data):
-            line = data[idx]
-            line = line.strip()
-            #print 'line:',line
-            if line.startswith('___'):
-                # Ignore extra formatting lines
-                idx += 1
-                continue
-            if line.startswith('***** HEPEVT'):
-                # Found a new HEPEVT block.  Process.
-                currentEvent = {}
-                tokens = line.split()
-                event_num = int((tokens[4].strip())[:-1])
-                n_particles = int(tokens[5])
-                currentEvent['event_num'] = event_num
-                currentEvent['n_particles'] = n_particles
-                currentEvent['particles'] = []
-                for npart in range(n_particles + 1):
-                    # Parse info from each particle
-                    first_line = data[idx + 5 + npart*3]
-                    second_line = data[idx + 5 + npart*3 + 1]
-                    first_line = first_line.replace('(','').replace(')','').replace(',','')
-                    second_line = second_line.replace('(','').replace(')','').replace(',','')
-                    #print '  first:',first_line
-                    #print '  second:',second_line
-                    first_toks = first_line.strip().split()
-                    second_toks = second_line.strip().split()
-                    particle = {
-                        'index':int(first_toks[0]),
-                        'status':int(first_toks[1]),
-                        'pdgid':int(second_toks[0]),
-                        'first_parent':int(first_toks[2]),
-                        'first_child':int(first_toks[3]),
-                        'last_parent':int(second_toks[1]),
-                        'last_child':int(second_toks[2]),
-                        'momentum':[float(first_toks[4])*GeV,
-                                    float(first_toks[5])*GeV,
-                                    float(first_toks[6])*GeV],
-                        'energy':float(first_toks[7])*GeV,
-                        'mass':float(first_toks[8])*GeV,
-                        'position':[float(second_toks[3])*mm,
-                                    float(second_toks[4])*mm,
-                                    float(second_toks[5])*mm],
-                        'time':float(second_toks[6])*mm/c_light,
-                    }
-                    currentEvent['particles'].append(particle)
-                hepEvts.append( copy(currentEvent) )
-                idx += (5 + (n_particles+1)*3 + 1)
-                #print ' HepEVT Loaded:', len(hepEvts)
-                #if len(hepEvts) > 20: break
-        return hepEvts
-        
-    def GeneratePrimaries(self, event):
-        if not self.isInitialized:
-            self.initialize()
-        if self.currentEventIdx > len(self.hepEvts):
-            print ('Error: No more HepEVT data! (max events=%d)'
-                   % self.currentEventIdx)
-            return event
-        currentEvt = self.hepEvts[self.currentEventIdx]
-        self._tb.ancestor = None
-        # Set default position and time to zero 
-        time = 0
-        finalStateParticles = []
-        for heppart in currentEvt['particles']:
-            status = heppart['status']
-            if status not in [0,1]:
-                # ignore all but initial, final state particles
-                #  FIXME: should probably throw a warning
-                continue
-            heppos = heppart['position']
-            hepmom = heppart['momentum']
-            if status == 0:
-                # Initial state particle.  Add info to event tree
-                self._tb.ancestor = heppart
-            elif status == 1:
-                # Final state particle.  Add to event
-                position = G4ThreeVector(heppos[0],heppos[1],heppos[2])
-                particle = G4PrimaryParticle(heppart['pdgid'])
-                particle.Set4Momentum(hepmom[0],hepmom[1],hepmom[2],
-                                      heppart['energy'])
-                # Ensure mass is exact
-                particle.SetMass(heppart['mass'])
-                finalStateParticles.append([particle, position, time])
-        for [particle, position, time] in finalStateParticles:
-            vertex = G4PrimaryVertex(position, time)
-            vertex.SetPrimary(particle)
-            event.AddPrimaryVertex(vertex)
-        self.currentEventIdx += 1
-
-
-
 # GENIE port 
 class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
-    "Generator based on GHEP input data"
+    "Generator based on RooTracker input data"
     
-    def __init__(self, genieEvtFilename, treebuffer):
+    def __init__(self, genieEvtFilename, treebuffer, gtree,ofile):
         G4VUserPrimaryGeneratorAction.__init__(self)
         self.isInitialized = False
         self.inputFile = genieEvtFilename
         self.hepEvts = None
         self.currentEventIdx = 0
         self._tb = treebuffer
-        pass
+        self._gtree = gtree
+        self._ofile = ofile
+        return
 
     def initialize(self):
         # Prepare generator
         ifile = TFile(self.inputFile, 'READ')
         datatree = ifile.Get('gRooTracker')
+        self._ofile.cd()
+        self._gtree = datatree.CloneTree(0)
         print 'GENIE Generator: Loaded Tree with %d events from %s' % (
             datatree.GetEntries(), self.inputFile)
         self.hepEvts = self.parseGenieEvts(datatree) 
         self.isInitialized = True
         return
 
-    #make a function that opens up genie file
-    #and creates a tree w/ branches
-    def loadGenieTree(self):
-        ifile = TFile(self.inputFile, 'READ')
-        datatree = ifile.Get('gRooTracker') 
-        return datatree
-
     def parseGenieEvts(self,datatree):
         '''Parse GENIE input data'''
         hepEvts = []
+        #global gtree
+        #global gXSec
+        #global gDXSe
+        #global gWght
+        #global gProb
+        #global gCode
+
         for entry in datatree:
             currentEvent = {}
             currentEvent['event_num'] = entry.EvtNum
@@ -648,9 +462,9 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
             q4_shaped = np.reshape(q4, (len(p4)/4,4) )
 
             for npart in range(entry.StdHepN):
-                print npart, status[npart], pdg[npart]
+#                print npart, status[npart], pdg[npart]
                 if ( status[npart] > 1 ):
-                    print 'Other state', pdg[npart]
+#                    print 'Other state', pdg[npart]
 #                    if ( (abs(pdg[npart]) != 14)  or (abs(pdg[npart]) != 12) ):                    
 #                       print 'not inital neutrino or final state. skipping'
                     n_particles = n_particles - 1 
@@ -659,8 +473,8 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
                     if ( abs(pdg[npart]) == 12 or abs(pdg[npart]) == 14 ):
                         print 'Found intial state neutrino'
                     else:      
-                        print 'initial state', abs(pdg[npart])
                         n_particles = n_particles - 1
+                        print 'initial state', abs(pdg[npart])
                         continue
                 px = p4_shaped[npart][0]
                 py = p4_shaped[npart][1]
@@ -701,6 +515,11 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
             hepEvts.append( copy(currentEvent) )
 #            print ' Genie event loaded:', len(hepEvts)
 #            if len(hepEvts) > 20: break
+
+            #Genie info section
+            self._gtree.Fill()
+
+        self._gtree.Write()
         return hepEvts
     def GeneratePrimaries(self, event):
         if not self.isInitialized:
@@ -781,6 +600,7 @@ class MyEventAction(G4UserEventAction):
         tb = self._tb
         # Event ID
         tb.ev[0] = event.GetEventID()
+#        tb.
         # Ancestor particle (e.g. neutrino)
         if tb.ancestor != None:
             # Log info
