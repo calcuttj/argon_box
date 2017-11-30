@@ -69,7 +69,7 @@ class MySimulation:
         self._random_seed = 23
         self._ofile = None
         self._otree = None
-        self._gtree = None
+#        self._gtree = None
         self._treebuffer = None
         self._materials = {}
         self._geom = None
@@ -169,8 +169,8 @@ class MySimulation:
         ofile = TFile(self._ofilename,'RECREATE')
 
         otree = TTree('argon','Argon Simulation')
-        gtree = TTree('gtree','Genie Information')
-        gtree.SetDirectory(0)
+#        gtree = TTree('gtree','Genie Information')
+#        gtree.SetDirectory(0)
         tb = TreeBuffer()
         tb.maxInit = 100
         tb.maxTracks = 100000
@@ -211,6 +211,14 @@ class MySimulation:
         tb.xe = array('d',[0]*tb.maxTracks)
         tb.ye = array('d',[0]*tb.maxTracks)
         tb.ze = array('d',[0]*tb.maxTracks)
+        
+        tb.pxs = array('d',[0]*tb.maxTracks)
+        tb.pys = array('d',[0]*tb.maxTracks)
+        tb.pzs = array('d',[0]*tb.maxTracks)
+        tb.pxe = array('d',[0]*tb.maxTracks)
+        tb.pye = array('d',[0]*tb.maxTracks)
+        tb.pze = array('d',[0]*tb.maxTracks)
+        
         tb.ekin = array('d',[0]*tb.maxTracks)
         tb.edep = array('d',[0]*tb.maxTracks)
         # Geant4 energy deposition data
@@ -259,6 +267,12 @@ class MySimulation:
         otree.Branch('xe',tb.xe,'xe[nstep]/D')
         otree.Branch('ye',tb.ye,'ye[nstep]/D')
         otree.Branch('ze',tb.ze,'ze[nstep]/D')
+        otree.Branch('pxs',tb.pxs,'pxs[nstep]/D')
+        otree.Branch('pys',tb.pys,'pys[nstep]/D')
+        otree.Branch('pzs',tb.pzs,'pzs[nstep]/D')
+        otree.Branch('pxe',tb.pxe,'pxe[nstep]/D')
+        otree.Branch('pye',tb.pye,'pye[nstep]/D')
+        otree.Branch('pze',tb.pze,'pze[nstep]/D')
         otree.Branch('nq',tb.nq,'nq/I')
         otree.Branch('tidq',tb.tidq,'tidq[nq]/I')
         otree.Branch('pidq',tb.pidq,'pidq[nq]/I')
@@ -270,7 +284,7 @@ class MySimulation:
 
         self._ofile = ofile
         self._otree = otree
-        self._gtree = gtree
+#        self._gtree = gtree
         self._treebuffer = tb
 
         return
@@ -321,7 +335,7 @@ class MySimulation:
         self._generator = MyGenieEvtGeneratorAction(
             genieEvtFilename=self._source,
             treebuffer=self._treebuffer,
-            gtree=self._gtree,
+#            gtree=self._gtree,
             ofile=self._ofile)
         gRunManager.SetUserAction(self._generator)
         return
@@ -402,14 +416,14 @@ class MyDetectorConstruction(G4VUserDetectorConstruction):
 class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
     "Generator based on RooTracker input data"
     
-    def __init__(self, genieEvtFilename, treebuffer, gtree,ofile):
+    def __init__(self, genieEvtFilename, treebuffer, '''gtree,'''ofile):
         G4VUserPrimaryGeneratorAction.__init__(self)
         self.isInitialized = False
         self.inputFile = genieEvtFilename
         self.hepEvts = None
         self.currentEventIdx = 0
         self._tb = treebuffer
-        self._gtree = gtree
+#        self._gtree = gtree
         self._ofile = ofile
         return
 
@@ -418,7 +432,7 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
         ifile = TFile(self.inputFile, 'READ')
         datatree = ifile.Get('gRooTracker')
         self._ofile.cd()
-        self._gtree = datatree.CloneTree(0)
+#        self._gtree = datatree.CloneTree(0)
         print 'GENIE Generator: Loaded Tree with %d events from %s' % (
             datatree.GetEntries(), self.inputFile)
         self.hepEvts = self.parseGenieEvts(datatree) 
@@ -517,9 +531,9 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
 #            if len(hepEvts) > 20: break
 
             #Genie info section
-            self._gtree.Fill()
+#            self._gtree.Fill()
 
-        self._gtree.Write()
+#        self._gtree.Write()
         return hepEvts
     def GeneratePrimaries(self, event):
         if not self.isInitialized:
@@ -682,6 +696,16 @@ class MySteppingAction(G4UserSteppingAction):
         tb.xe[istp] = postpos.x / cm
         tb.ye[istp] = postpos.y / cm
         tb.ze[istp] = postpos.z / cm
+        # Add in momentum 
+        premom = prestep.GetMomentum()
+        postmom = poststep.GetMomentum()
+        tb.pxs[istp] = premom.x / GeV
+        tb.pys[istp] = premom.y / GeV
+        tb.pzs[istp] = premom.z / GeV 
+        tb.pxe[istp] = postmom.x / GeV
+        tb.pye[istp] = postmom.y / GeV
+        tb.pze[istp] = postmom.z / GeV
+
         tb.nstep[0] += 1
         if not self._include_edepsim:
             # Stop here, unless simple energy deposition simulation is enabled
