@@ -169,11 +169,9 @@ class MySimulation:
         ofile = TFile(self._ofilename,'RECREATE')
 
         otree = TTree('argon','Argon Simulation')
-#        gtree = TTree('gtree','Genie Information')
-#        gtree.SetDirectory(0)
         tb = TreeBuffer()
         tb.maxInit = 100
-        tb.maxTracks = 100000
+        tb.maxTracks = 1000000
         tb.maxNQ = 10000000
         tb.ev = array('i',[0])
         # Ancestor particles (e.g. neutrino)
@@ -284,7 +282,6 @@ class MySimulation:
 
         self._ofile = ofile
         self._otree = otree
-#        self._gtree = gtree
         self._treebuffer = tb
 
         return
@@ -335,7 +332,6 @@ class MySimulation:
         self._generator = MyGenieEvtGeneratorAction(
             genieEvtFilename=self._source,
             treebuffer=self._treebuffer,
-#            gtree=self._gtree,
             ofile=self._ofile)
         gRunManager.SetUserAction(self._generator)
         return
@@ -390,7 +386,7 @@ class MyDetectorConstruction(G4VUserDetectorConstruction):
     def Construct(self):
         '''Construct geometry'''
         # World (box of liquid argon)
-        world_s = G4Box("World", 36*m, 3*m, 5*m)
+        world_s = G4Box("World", 18*m, 1.5*m, 2.5*m)
         world_l = G4LogicalVolume(world_s, self.materials['liquidArgon'],
                                   "World")
         world_p = G4PVPlacement(None,                  #no rotation
@@ -416,14 +412,13 @@ class MyDetectorConstruction(G4VUserDetectorConstruction):
 class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
     "Generator based on RooTracker input data"
     
-    def __init__(self, genieEvtFilename, treebuffer, '''gtree,'''ofile):
+    def __init__(self, genieEvtFilename, treebuffer, ofile):
         G4VUserPrimaryGeneratorAction.__init__(self)
         self.isInitialized = False
         self.inputFile = genieEvtFilename
         self.hepEvts = None
         self.currentEventIdx = 0
         self._tb = treebuffer
-#        self._gtree = gtree
         self._ofile = ofile
         return
 
@@ -432,7 +427,6 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
         ifile = TFile(self.inputFile, 'READ')
         datatree = ifile.Get('gRooTracker')
         self._ofile.cd()
-#        self._gtree = datatree.CloneTree(0)
         print 'GENIE Generator: Loaded Tree with %d events from %s' % (
             datatree.GetEntries(), self.inputFile)
         self.hepEvts = self.parseGenieEvts(datatree) 
@@ -442,12 +436,6 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
     def parseGenieEvts(self,datatree):
         '''Parse GENIE input data'''
         hepEvts = []
-        #global gtree
-        #global gXSec
-        #global gDXSe
-        #global gWght
-        #global gProb
-        #global gCode
 
         for entry in datatree:
             currentEvent = {}
@@ -530,10 +518,6 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
 #            print ' Genie event loaded:', len(hepEvts)
 #            if len(hepEvts) > 20: break
 
-            #Genie info section
-#            self._gtree.Fill()
-
-#        self._gtree.Write()
         return hepEvts
     def GeneratePrimaries(self, event):
         if not self.isInitialized:
@@ -614,7 +598,6 @@ class MyEventAction(G4UserEventAction):
         tb = self._tb
         # Event ID
         tb.ev[0] = event.GetEventID()
-#        tb.
         # Ancestor particle (e.g. neutrino)
         if tb.ancestor != None:
             # Log info
