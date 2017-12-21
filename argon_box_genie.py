@@ -47,6 +47,7 @@ import g4py.NISTmaterials
 
 # General tools
 from copy import copy
+from time import sleep
 
 # General math
 from math import sqrt, cos, sin, acos
@@ -107,7 +108,16 @@ class MySimulation:
 
     def run(self):
         '''Run the simulation'''
-        gRunManager.BeamOn(self._nevents)
+        if self._nevents > 0:
+          print "Provided events ", self._nevents
+          sleep(2)
+          gRunManager.BeamOn(self._nevents)
+        else:
+          nFile = TFile(self._source,'READ')
+          t = nFile.Get("gRooTracker")
+          print "Got entries from tree ", t.GetEntries()
+          sleep(2)
+          gRunManager.BeamOn(t.GetEntries())
         return
 
     def finalize(self):
@@ -719,7 +729,7 @@ class MySteppingAction(G4UserSteppingAction):
 
 if '__main__' == __name__:
     # Run the simulation
-
+    print "Running simulation"
     mysim = MySimulation()
     mysim.initialize()
     mysim.run()
