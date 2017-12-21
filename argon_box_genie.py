@@ -77,6 +77,7 @@ class MySimulation:
         self._physlist_name = 'QGSP_BERT'
         self._physics_list = None
         self._source = None
+        self._shift = None
         self._energies = None
         self._source_position = None
         self._generator = None
@@ -147,6 +148,9 @@ class MySimulation:
         parser.add_argument('--physlist',
                             help='G4 Physics List: FTFP_BERT, QGSP_BERT, QGSP_BERT_HP',
                             default='QGSP_BERT')
+        parser.add_argument('--shift', type=float,
+                            help='Shift from GENIE geom -> centered argon box in cm',
+                            default='0.0')
 
         self._args = parser.parse_args()
         if self._args.nevents is not None:
@@ -159,6 +163,8 @@ class MySimulation:
             self._ofilename = self._args.output
         if self._args.seed is not None:
             self._random_seed = self._args.seed
+        if self._args.shift is not None:
+            self._shift = self._args.shift
         if self._args.enable_edepsim:
             self._include_edepsim = True
         if self._args.edep_step:
@@ -166,6 +172,7 @@ class MySimulation:
         print "Configuration:"
         print "  nevents:",self._nevents
         print "   source:",self._source
+        print "   shift:",self._shift
         print "   energies:",self._energies
         print "   output:",self._ofilename
         print " physlist:",self._physlist_name
@@ -183,6 +190,7 @@ class MySimulation:
         tb.maxInit = 100
         tb.maxTracks = 1000000
         tb.maxNQ = 10000000
+        tb.shift = self._shift
         tb.ev = array('i',[0])
         # Ancestor particles (e.g. neutrino)
         #   Note: For simplicity, assume only one potential ancestor
@@ -494,7 +502,7 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
                 E = p4_shaped[npart][3]
                 p2 = px**2 + py**2 + pz**2              
                      
-                x = (evt_pos[0]*10**3 + q4_shaped[npart][0]*(10**-9) + 15000.)*mm #shifting over for events
+                x = (evt_pos[0]*10**3 + q4_shaped[npart][0]*(10**-9) + self._tb.shift*10.)*mm #shifting over for events
                 y = (evt_pos[1]*10**3 + q4_shaped[npart][1]*(10**-9))*mm
                 z = (evt_pos[2]*10**3 + q4_shaped[npart][2]*(10**-9))*mm
                 t = q4_shaped[npart][3]*(10**-9)*mm/c_light 
@@ -615,7 +623,8 @@ class MyEventAction(G4UserEventAction):
             tb.pida[0] = heppart['pdgid']
             heppos = heppart['position']
             hepmom = heppart['momentum']
-            tb.xa[0] = heppos[0] / cm
+            print "position",heppos[0]
+            tb.xa[0] = (heppos[0] - tb.shift*10.)/ cm
             tb.ya[0] = heppos[1] / cm
             tb.za[0] = heppos[2] / cm
             tb.ta[0] = heppart['time'] / ns
@@ -631,7 +640,7 @@ class MyEventAction(G4UserEventAction):
             for pp_idx in range(pvtx.GetNumberOfParticle()):
                 ppart = pvtx.GetPrimary(pp_idx)
                 tb.pidi[ni] = ppart.GetPDGcode()
-                tb.xi[ni] = pvtx.GetX0() / cm
+                tb.xi[ni] = (pvtx.GetX0() - tb.shift*10.) / cm
                 tb.yi[ni] = pvtx.GetY0() / cm
                 tb.zi[ni] = pvtx.GetZ0() / cm
                 tb.ti[ni] = pvtx.GetT0() / ns
@@ -683,10 +692,10 @@ class MySteppingAction(G4UserSteppingAction):
         # Capture step position
         prepos = prestep.GetPosition()
         postpos = poststep.GetPosition()
-        tb.xs[istp] = prepos.x / cm
+        tb.xs[istp] = (prepos.x - tb.shift*10.) / cm
         tb.ys[istp] = prepos.y / cm
         tb.zs[istp] = prepos.z / cm 
-        tb.xe[istp] = postpos.x / cm
+        tb.xe[istp] = (postpos.x - tb.shift*10.) / cm
         tb.ye[istp] = postpos.y / cm
         tb.ze[istp] = postpos.z / cm
         # Add in momentum 
@@ -718,7 +727,7 @@ class MySteppingAction(G4UserSteppingAction):
                 tb.pidq[iq+qidx] = track.GetDefinition().GetPDGEncoding()
                 tb.sidq[iq+qidx] = istp
                 tb.dq[iq+qidx] = (eIon / dnq) / MeV
-                tb.xq[iq+qidx] = curpos.x / cm
+                tb.xq[iq+qidx] = (curpos.x - tb.shift*10.) / cm
                 tb.yq[iq+qidx] = curpos.y / cm
                 tb.zq[iq+qidx] = curpos.z / cm
             tb.nq[0] += dnq
