@@ -78,6 +78,9 @@ class MySimulation:
         self._physics_list = None
         self._source = None
         self._shift = None
+        self._detX = None
+        self._detY = None
+        self._detZ = None
         self._energies = None
         self._source_position = None
         self._generator = None
@@ -151,6 +154,15 @@ class MySimulation:
         parser.add_argument('--shift', type=float,
                             help='Shift from GENIE geom -> centered argon box in cm',
                             default='0.0')
+        parser.add_argument('--detX', type=float,
+                            help='1/2 full Detector X dimension (m)',
+                            default='0.0')
+        parser.add_argument('--detY', type=float,
+                            help='1/2 full Detector Y dimension (m)',
+                            default='0.0')
+        parser.add_argument('--detZ', type=float,
+                            help='1/2 full Detector Z dimension (m)',
+                             default='0.0')
 
         self._args = parser.parse_args()
         if self._args.nevents is not None:
@@ -165,6 +177,12 @@ class MySimulation:
             self._random_seed = self._args.seed
         if self._args.shift is not None:
             self._shift = self._args.shift
+        if self._args.detX is not None:
+            self._detX = self._args.detX
+        if self._args.detY is not None:
+            self._detY = self._args.detY
+        if self._args.detZ is not None:
+            self._detZ = self._args.detZ
         if self._args.enable_edepsim:
             self._include_edepsim = True
         if self._args.edep_step:
@@ -173,6 +191,9 @@ class MySimulation:
         print "  nevents:",self._nevents
         print "   source:",self._source
         print "   shift:",self._shift
+        print "   detX:",self._detX
+        print "   detY:",self._detY
+        print "   detZ:",self._detZ
         print "   energies:",self._energies
         print "   output:",self._ofilename
         print " physlist:",self._physlist_name
@@ -326,7 +347,7 @@ class MySimulation:
 
     def _init_geometry(self):
         '''Initialize geant geometry'''
-        self._geom = MyDetectorConstruction(materials=self._materials)
+        self._geom = MyDetectorConstruction(materials=self._materials,detX=self._detX,detY=self._detY,detZ=self._detZ)
         gRunManager.SetUserInitialization(self._geom)        
         return
 
@@ -391,7 +412,7 @@ class GTreeBuffer:
 class MyDetectorConstruction(G4VUserDetectorConstruction):
     "My Detector Construction"
 
-    def __init__(self, materials={}):
+    def __init__(self, materials={},detX=100.,detY=100.,detZ=100.):
         G4VUserDetectorConstruction.__init__(self)
         self.vols = []
         self.rots = []
@@ -400,11 +421,16 @@ class MyDetectorConstruction(G4VUserDetectorConstruction):
         self.volumeidx = {
             'World':0,
         }
+        self.detX = detX
+        self.detY = detY
+        self.detZ = detZ
+        print self.detX, self.detY, self.detZ
         
     def Construct(self):
         '''Construct geometry'''
         # World (box of liquid argon)
-        world_s = G4Box("World", 18*m, 1.5*m, 2.5*m)
+        #world_s = G4Box("World", 19.5*m, 1.5*m, 2.5*m)
+        world_s = G4Box("World", self.detX*m, self.detY*m, self.detZ*m)
         world_l = G4LogicalVolume(world_s, self.materials['liquidArgon'],
                                   "World")
         world_p = G4PVPlacement(None,                  #no rotation
@@ -623,7 +649,6 @@ class MyEventAction(G4UserEventAction):
             tb.pida[0] = heppart['pdgid']
             heppos = heppart['position']
             hepmom = heppart['momentum']
-            print "position",heppos[0]
             tb.xa[0] = (heppos[0] - tb.shift*10.)/ cm
             tb.ya[0] = heppos[1] / cm
             tb.za[0] = heppos[2] / cm
