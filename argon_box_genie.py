@@ -226,7 +226,7 @@ class MySimulation:
         tb.pza = array('d',[0])
         tb.ekina = array('d',[0])
         tb.ma = array('d',[0])        
-        tb.code = bytearray(51) 
+        #tb.code = bytearray(51) 
         # Geant4 initial state particles
         tb.ni = array('i',[0])
         tb.pidi = array('i',[0]*tb.maxInit)
