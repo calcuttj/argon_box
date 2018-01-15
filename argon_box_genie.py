@@ -208,6 +208,7 @@ class MySimulation:
 
         otree = TTree('argon','Argon Simulation')
         tb = TreeBuffer()
+        tb.nevents = self._nevents
         tb.maxInit = 100
         tb.maxTracks = 1000000
         tb.maxNQ = 10000000
@@ -225,7 +226,7 @@ class MySimulation:
         tb.pza = array('d',[0])
         tb.ekina = array('d',[0])
         tb.ma = array('d',[0])        
-        tb.code = ''
+        tb.code = bytearray(51) 
         # Geant4 initial state particles
         tb.ni = array('i',[0])
         tb.pidi = array('i',[0]*tb.maxInit)
@@ -283,7 +284,7 @@ class MySimulation:
         otree.Branch('pza',tb.pza,'pza/D')
         otree.Branch('ekina',tb.ekina,'ekina/D')
         otree.Branch('ma',tb.ma,'ma/D')
-        otree.Branch('code',tb.code,'code/S')
+        otree.Branch('code',tb.code,'code[51]/C')
         otree.Branch('ni',tb.ni,'ni/I')
         otree.Branch('pidi',tb.pidi,'pidi[ni]/I')
         otree.Branch('xi',tb.xi,'xi[ni]/D')
@@ -484,42 +485,44 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
     def parseGenieEvts(self,datatree):
         '''Parse GENIE input data'''
         hepEvts = []
-
-        for entry in datatree:
+        entry_count = 0
+        while entry_count < self._tb.nevents:
+            datatree.GetEntry(entry_count)
             currentEvent = {}
-            currentEvent['event_num'] = entry.EvtNum
-            n_particles = entry.StdHepN
+            currentEvent['event_num'] = datatree.EvtNum
+            n_particles = datatree.StdHepN
             currentEvent['particles'] = []
 
             #event position in meters
-            evt_pos = [entry.EvtVtx[0],
-                       entry.EvtVtx[1],
-                       entry.EvtVtx[2]]
+            evt_pos = [datatree.EvtVtx[0],
+                       datatree.EvtVtx[1],
+                       datatree.EvtVtx[2]]
 
             #retuns lists: info[particle]
-            status = entry.StdHepStatus
-            pdg = entry.StdHepPdg
-            first_parent = entry.StdHepFm
-            first_child = entry.StdHepFd
-            last_parent = entry.StdHepLm
-            last_child = entry.StdHepLd
+            status = datatree.StdHepStatus
+            pdg = datatree.StdHepPdg
+            first_parent = datatree.StdHepFm
+            first_child = datatree.StdHepFd
+            last_parent = datatree.StdHepLm
+            last_child = datatree.StdHepLd
 
             #funky nested list stuff
-            p4 = entry.StdHepP4
+            p4 = datatree.StdHepP4
             p4_shaped = np.reshape(p4, (len(p4)/4,4) )
 
-            q4 = entry.StdHepX4
+            q4 = datatree.StdHepX4
             q4_shaped = np.reshape(q4, (len(p4)/4,4) )
 
-            event_code = str(entry.EvtCode).split(';')
+            event_code = str(datatree.EvtCode).split(';')
             counter = 0
             for part in event_code:
               if 'proc' in part:
-                self._tb.code = part + ';' + event_code[counter + 1]
-                print part + ';' + event_code[counter + 1]
+                this_code = part + ';' + event_code[counter+1]
+                self._tb.code[:len(this_code)+1] = part + ';' + event_code[counter + 1]
+                print self._tb.code 
               counter = counter + 1
 
-            for npart in range(entry.StdHepN):
+            for npart in range(datatree.StdHepN):
 #                print npart, status[npart], pdg[npart]
                 if ( status[npart] > 1 ):
 #                    print 'Other state', pdg[npart]
@@ -571,10 +574,97 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
                 currentEvent['n_particles'] = n_particles
                 currentEvent['particles'].append(particle)
             hepEvts.append( copy(currentEvent) )
-#            print ' Genie event loaded:', len(hepEvts)
-#            if len(hepEvts) > 20: break
-
+            entry_count = entry_count + 1 
         return hepEvts
+
+#'''        for entry in datatree:
+#            currentEvent = {}
+#            currentEvent['event_num'] = entry.EvtNum
+#            n_particles = entry.StdHepN
+#            currentEvent['particles'] = []
+#
+#            #event position in meters
+#            evt_pos = [entry.EvtVtx[0],
+#                       entry.EvtVtx[1],
+#                       entry.EvtVtx[2]]
+#
+#            #retuns lists: info[particle]
+#            status = entry.StdHepStatus
+#            pdg = entry.StdHepPdg
+#            first_parent = entry.StdHepFm
+#            first_child = entry.StdHepFd
+#            last_parent = entry.StdHepLm
+#            last_child = entry.StdHepLd
+#
+#            #funky nested list stuff
+#            p4 = entry.StdHepP4
+#            p4_shaped = np.reshape(p4, (len(p4)/4,4) )
+#
+#            q4 = entry.StdHepX4
+#            q4_shaped = np.reshape(q4, (len(p4)/4,4) )
+#
+#            event_code = str(entry.EvtCode).split(';')
+#            counter = 0
+#            for part in event_code:
+#              if 'proc' in part:
+#                self._tb.code = part + ';' + event_code[counter + 1]
+#                print part + ';' + event_code[counter + 1]
+#              counter = counter + 1
+#
+#            for npart in range(entry.StdHepN):
+##                print npart, status[npart], pdg[npart]
+#                if ( status[npart] > 1 ):
+##                    print 'Other state', pdg[npart]
+##                    if ( (abs(pdg[npart]) != 14)  or (abs(pdg[npart]) != 12) ):                    
+##                       print 'not inital neutrino or final state. skipping'
+#                    n_particles = n_particles - 1 
+#                    continue
+#                if ( status[npart] == 0 ):
+#                    if ( abs(pdg[npart]) == 12 or abs(pdg[npart]) == 14 ):
+#                        print 'Found intial state neutrino'
+#                    else:      
+#                        n_particles = n_particles - 1
+#                        print 'initial state', abs(pdg[npart])
+#                        continue
+#                px = p4_shaped[npart][0]
+#                py = p4_shaped[npart][1]
+#                pz = p4_shaped[npart][2]
+#                E = p4_shaped[npart][3]
+#                p2 = px**2 + py**2 + pz**2              
+#                     
+#                x = (evt_pos[0]*10**3 + q4_shaped[npart][0]*(10**-9) + self._tb.shift*10.)*mm #shifting over for events
+#                y = (evt_pos[1]*10**3 + q4_shaped[npart][1]*(10**-9))*mm
+#                z = (evt_pos[2]*10**3 + q4_shaped[npart][2]*(10**-9))*mm
+#                t = q4_shaped[npart][3]*(10**-9)*mm/c_light 
+#
+#
+##                print npart, x, y, z, pdg[npart]
+##                print (E*E - p2)
+#                if (E*E - p2) < 0:
+##                    print pdg[npart]
+#                    m = 0
+#                else:
+#                    m = sqrt(E*E - p2)
+#
+#                particle = {
+#                    'index':npart, #is this right?
+#                    'status':status[npart],
+#                    'pdgid':pdg[npart],
+#                    'first_parent':first_parent[npart],
+#                    'first_child':first_child[npart],
+#                    'last_parent':last_parent[npart],
+#                    'last_child':last_child[npart],
+#                    'momentum':[px*GeV, py*GeV, pz*GeV],
+#                    'energy':E*GeV,
+#                    'mass':m*GeV,
+#                    'position':[x, y, z],
+#                    'time':t,
+#                }
+#                currentEvent['n_particles'] = n_particles
+#                currentEvent['particles'].append(particle)
+#            hepEvts.append( copy(currentEvent) )
+
+
     def GeneratePrimaries(self, event):
         if not self.isInitialized:
             self.initialize()
