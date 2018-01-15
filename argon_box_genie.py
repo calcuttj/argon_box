@@ -225,6 +225,7 @@ class MySimulation:
         tb.pza = array('d',[0])
         tb.ekina = array('d',[0])
         tb.ma = array('d',[0])        
+        tb.code = ''
         # Geant4 initial state particles
         tb.ni = array('i',[0])
         tb.pidi = array('i',[0]*tb.maxInit)
@@ -248,6 +249,7 @@ class MySimulation:
         tb.xe = array('d',[0]*tb.maxTracks)
         tb.ye = array('d',[0]*tb.maxTracks)
         tb.ze = array('d',[0]*tb.maxTracks)
+        tb.te = array('d',[0]*tb.maxTracks)
         
         tb.pxs = array('d',[0]*tb.maxTracks)
         tb.pys = array('d',[0]*tb.maxTracks)
@@ -281,6 +283,7 @@ class MySimulation:
         otree.Branch('pza',tb.pza,'pza/D')
         otree.Branch('ekina',tb.ekina,'ekina/D')
         otree.Branch('ma',tb.ma,'ma/D')
+        otree.Branch('code',tb.code,'code/S')
         otree.Branch('ni',tb.ni,'ni/I')
         otree.Branch('pidi',tb.pidi,'pidi[ni]/I')
         otree.Branch('xi',tb.xi,'xi[ni]/D')
@@ -304,6 +307,7 @@ class MySimulation:
         otree.Branch('xe',tb.xe,'xe[nstep]/D')
         otree.Branch('ye',tb.ye,'ye[nstep]/D')
         otree.Branch('ze',tb.ze,'ze[nstep]/D')
+        otree.Branch('te',tb.te,'te[nstep]/D')
         otree.Branch('pxs',tb.pxs,'pxs[nstep]/D')
         otree.Branch('pys',tb.pys,'pys[nstep]/D')
         otree.Branch('pzs',tb.pzs,'pzs[nstep]/D')
@@ -506,6 +510,14 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
 
             q4 = entry.StdHepX4
             q4_shaped = np.reshape(q4, (len(p4)/4,4) )
+
+            event_code = str(entry.EvtCode).split(';')
+            counter = 0
+            for part in event_code:
+              if 'proc' in part:
+                self._tb.code = part + ';' + event_code[counter + 1]
+                print part + ';' + event_code[counter + 1]
+              counter = counter + 1
 
             for npart in range(entry.StdHepN):
 #                print npart, status[npart], pdg[npart]
@@ -723,6 +735,7 @@ class MySteppingAction(G4UserSteppingAction):
         tb.xe[istp] = (postpos.x - tb.shift*10.) / cm
         tb.ye[istp] = postpos.y / cm
         tb.ze[istp] = postpos.z / cm
+        tb.te[istp] = poststep.GetGlobalTime() / ns
         # Add in momentum 
         premom = prestep.GetMomentum()
         postmom = poststep.GetMomentum()
