@@ -122,6 +122,7 @@ class MySimulation:
           print "Got entries from tree ", t.GetEntries()
           sleep(2)
           gRunManager.BeamOn(t.GetEntries())
+          self._nevents = t.GetEntries()
         return
 
     def finalize(self):
@@ -165,10 +166,18 @@ class MySimulation:
                              default='0.0')
 
         self._args = parser.parse_args()
-        if self._args.nevents is not None:
-            self._nevents = self._args.nevents
+
         if self._args.source is not None:
             self._source = self._args.source
+        if self._args.nevents is not None:
+            self._nevents = self._args.nevents
+            if self._nevents > 0:
+              print "Provided events ", self._nevents
+            else:
+              nFile = TFile(self._source,'READ')
+              t = nFile.Get("gRooTracker")
+              print "Got entries from tree ", t.GetEntries()
+              self._nevents = t.GetEntries()
         if self._args.energy is not None:
             self._energies = [self._args.energy * GeV,]
         if self._args.output is not None:
@@ -487,6 +496,7 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
         '''Parse GENIE input data'''
         hepEvts = []
         entry_count = 0
+        print "nevents: ", self._tb.nevents
         while entry_count < self._tb.nevents:
             datatree.GetEntry(entry_count)
             currentEvent = {}
@@ -574,6 +584,7 @@ class MyGenieEvtGeneratorAction(G4VUserPrimaryGeneratorAction):
                 currentEvent['particles'].append(particle)
             hepEvts.append( copy(currentEvent) )
             entry_count = entry_count + 1 
+            print "entry: ", entry_count
 
 #        for entry in datatree:
 #            currentEvent = {}
